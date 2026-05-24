@@ -622,8 +622,8 @@ def health():
 
 @app.route("/myip")
 def myip():
-    import urllib.request
-    ip = urllib.request.urlopen("https://api.ipify.org").read().decode()
+    import subprocess
+    ip = subprocess.check_output(["curl", "-s", "https://checkip.amazonaws.com"]).decode().strip()
     return jsonify({"ip": ip})
 
 # ── Debug ─────────────────────────────────────────────────────────────────────

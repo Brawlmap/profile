@@ -620,6 +620,12 @@ def cms_delete_changelog(entry_id):
 def health():
     return jsonify({"status": "ok"})
 
+@app.route("/myip")
+def myip():
+    import urllib.request
+    ip = urllib.request.urlopen("https://api.ipify.org").read().decode()
+    return jsonify({"ip": ip})
+
 # ── Debug ─────────────────────────────────────────────────────────────────────
 
 @app.route("/debug/player/<path:tag>/brawlers")

@@ -417,6 +417,7 @@ def get_player_brawlers(tag):
                 "trophies": b.get("trophies",0), "highestTrophies": b.get("highestTrophies",0),
                 "rank": b.get("rank",1), "hasHypercharge": has_hypercharge, "colour": colour,
                 "gadgets": len(b.get("gadgets",[])), "starPowers": len(b.get("starPowers",[])),
+                "gears": len(b.get("gears",[])),
             })
         order = {"purple":0,"red":1,"yellow":2,"green":3,"grey":4}
         result.sort(key=lambda x: (order[x["colour"]], -x["trophies"]))
@@ -653,3 +654,5 @@ def handle_404(error):
 if __name__ == "__main__":
     print("Brawlmap server running at http://localhost:5000")
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)), debug=False)
+
+    

@@ -50,6 +50,17 @@ def handle_options():
         return r, 204
 
 BASE_URL = "https://api.brawlstars.com/v1"
+
+# Brawlers that actually have buffies in the game (update as Supercell adds more)
+# 15 brawlers confirmed as of May 2026
+BRAWLERS_WITH_BUFFIES = {
+    # Update 65 (Dec 2025) — first batch
+    "SHELLY", "COLT", "SPIKE", "MORTIS", "FRANK", "EMZ",
+    # Later updates
+    "BULL", "BO", "NITA", "CROW",
+    "GRIFF", "COLETTE", "EDGAR",
+    "LEON", "SANDY",
+}
 API_KEY  = os.getenv("BRAWL_STARS_API_KEY")
 
 def _require_api_key():
@@ -359,17 +370,6 @@ def get_player(tag):
 
 # ── Brawlers ──────────────────────────────────────────────────────────────────
 
-@app.route("/brawlers")
-def get_brawlers():
-    err = _require_api_key()
-    if err:
-        return err
-    try:
-        r = requests.get(f"{BASE_URL}/brawlers", headers=bs_headers())
-        return upstream_jsonify(r)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
 @app.route("/player/<path:tag>/brawlers")
 def get_player_brawlers(tag):
     err = _require_api_key()
@@ -388,8 +388,10 @@ def get_player_brawlers(tag):
         player = parse_upstream_json(r) or {}
         raw_brawlers = player.get("brawlers", [])
         result = []
+        
         for b in raw_brawlers:
             power = b.get("power", 1)
+            
             has_hypercharge = False
             for key in ("hyperCharge","hypercharge","hasHyperCharge","hasHypercharge","hyperChargeUnlocked"):
                 if b.get(key): has_hypercharge = True; break
@@ -406,22 +408,109 @@ def get_player_brawlers(tag):
                 for key, val in b.items():
                     if "hyper" in key.lower() and val: has_hypercharge = True; break
 
-            if power < 7:         colour = "grey"
-            elif power < 9:       colour = "green"
-            elif power < 11:      colour = "yellow"
-            elif has_hypercharge: colour = "purple"
-            else:                 colour = "red"
+            gadget_count = len(b.get("gadgets", []))
+            sp_count     = len(b.get("starPowers", []))
+
+            if power < 7:   colour = "grey"
+            elif power < 9: colour = "green"
+            elif power < 11: colour = "yellow"
+            elif has_hypercharge and gadget_count >= 2 and sp_count >= 2:
+                             colour = "purple"   # Lv11 + HC + both gadgets + both SP
+            else:            colour = "red"      # Lv11 but not fully upgraded
+
+            # Extract buffies — API returns BrawlerBuffies: {gadget, starPower, hyperCharge} booleans
+            # Only populate for brawlers that actually have buffies in the game
+            raw_buffies = b.get("buffies") or {}
+            brawler_name_upper = (b.get("name") or "").upper()
+            buffies = []
+            if isinstance(raw_buffies, dict) and brawler_name_upper in BRAWLERS_WITH_BUFFIES:
+                buffies = [
+                    {"name": "Gadget Buffie",      "type": "gadget", "owned": bool(raw_buffies.get("gadget",      False))},
+                    {"name": "Star Power Buffie",  "type": "sp",     "owned": bool(raw_buffies.get("starPower",   False))},
+                    {"name": "Hypercharge Buffie", "type": "hc",     "owned": bool(raw_buffies.get("hyperCharge", False))},
+                ]
 
             result.append({
-                "id": b.get("id"), "name": b.get("name"), "power": power,
-                "trophies": b.get("trophies",0), "highestTrophies": b.get("highestTrophies",0),
-                "rank": b.get("rank",1), "hasHypercharge": has_hypercharge, "colour": colour,
-                "gadgets": len(b.get("gadgets",[])), "starPowers": len(b.get("starPowers",[])),
+                "id": b.get("id"), 
+                "name": b.get("name"), 
+                "power": power,
+                "trophies": b.get("trophies",0), 
+                "highestTrophies": b.get("highestTrophies",0),
+                "rank": b.get("rank",1), 
+                "hasHypercharge": has_hypercharge, 
+                "colour": colour,
+                "gadgets": len(b.get("gadgets",[])), 
+                "starPowers": len(b.get("starPowers",[])),
                 "gears": len(b.get("gears",[])),
+                "buffies": buffies
             })
-        order = {"purple":0,"red":1,"yellow":2,"green":3,"grey":4}
-        result.sort(key=lambda x: (order[x["colour"]], -x["trophies"]))
+
+        sort_mode = (request.args.get("sort", "trophies") or "trophies").lower()
+
+        if sort_mode == "power":
+            result.sort(key=lambda x: (-x["power"], -(x["gadgets"] + x["starPowers"] + x["gears"]), -x["trophies"], x.get("name") or ""))
+        else:
+            result.sort(key=lambda x: (-x["trophies"], -x["power"], -(x["gadgets"] + x["starPowers"] + x["gears"]), x.get("name") or ""))
+
         return jsonify({"name": player.get("name"), "tag": player.get("tag"), "brawlers": result})
+    
+    except Exception as e:
+        print(f"ERROR in get_player_brawlers: {e}", flush=True)
+        return jsonify({"error": str(e)}), 500
+
+# ── Frontend HTML pages ───────────────────────────────────────────────────────
+_HERE = os.path.dirname(__file__)
+
+@app.route("/profile", strict_slashes=False)
+def page_profile():
+    return send_from_directory(_HERE, "profile.html")
+
+@app.route("/club", strict_slashes=False)
+def page_club():
+    return send_from_directory(_HERE, "club.html")
+
+# ── Club API ───────────────────────────────────────────────────────────────────
+
+@app.route("/club/<path:tag>")
+def get_club(tag):
+    err = _require_api_key()
+    if err: return err
+    if not tag.startswith("%23") and not tag.startswith("#"):
+        tag = "%23" + tag
+    elif tag.startswith("#"):
+        tag = "%23" + tag[1:]
+    try:
+        r = requests.get(f"{BASE_URL}/clubs/{tag}", headers=bs_headers())
+        return upstream_jsonify(r)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/club/<path:tag>/members")
+def get_club_members(tag):
+    err = _require_api_key()
+    if err: return err
+    if not tag.startswith("%23") and not tag.startswith("#"):
+        tag = "%23" + tag
+    elif tag.startswith("#"):
+        tag = "%23" + tag[1:]
+    try:
+        r = requests.get(f"{BASE_URL}/clubs/{tag}/members", headers=bs_headers())
+        if not r.ok:
+            return upstream_jsonify(r)
+        data = parse_upstream_json(r) or {}
+        members = []
+        for m in data.get("items", []):
+            members.append({
+                "tag":       m.get("tag"),
+                "name":      m.get("name"),
+                "trophies":  m.get("trophies", 0),
+                "role":      m.get("role", "member"),
+                "nameColor": m.get("nameColor", ""),
+                "icon":      (m.get("icon") or {}).get("id"),
+            })
+        role_order = {"president": 0, "vicePresident": 1, "senior": 2, "member": 3}
+        members.sort(key=lambda x: (role_order.get(x["role"], 9), -x["trophies"]))
+        return jsonify({"items": members})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -649,10 +738,8 @@ def debug_player_brawlers(tag):
 
 @app.errorhandler(404)
 def handle_404(error):
-    return send_from_directory(os.path.dirname(__file__), "404.html"), 404
+    return send_from_directory(_HERE, "404.html"), 404
 
 if __name__ == "__main__":
     print("Brawlmap server running at http://localhost:5000")
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)), debug=False)
-
-    

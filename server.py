@@ -52,14 +52,17 @@ def handle_options():
 BASE_URL = "https://api.brawlstars.com/v1"
 
 # Brawlers that actually have buffies in the game (update as Supercell adds more)
-# 15 brawlers confirmed as of May 2026
 BRAWLERS_WITH_BUFFIES = {
-    # Update 65 (Dec 2025) — first batch
-    "SHELLY", "COLT", "SPIKE", "MORTIS", "FRANK", "EMZ",
-    # Later updates
-    "BULL", "BO", "NITA", "CROW",
+    # Update 65
+    "SHELLY", "COLT", "SPIKE", 
+    "MORTIS", "FRANK", "EMZ",
+    
+    # Update 66
+    "BULL", "BIBI", "CROW",
+    "BO", "NITA", "LEON",
+
+    # Update 67
     "GRIFF", "COLETTE", "EDGAR",
-    "LEON", "SANDY",
 }
 API_KEY  = os.getenv("BRAWL_STARS_API_KEY")
 
@@ -410,12 +413,13 @@ def get_player_brawlers(tag):
 
             gadget_count = len(b.get("gadgets", []))
             sp_count     = len(b.get("starPowers", []))
+            gear_count   = len(b.get("gears", []))
 
             if power < 7:   colour = "grey"
             elif power < 9: colour = "green"
             elif power < 11: colour = "yellow"
-            elif has_hypercharge and gadget_count >= 2 and sp_count >= 2:
-                             colour = "purple"   # Lv11 + HC + both gadgets + both SP
+            elif has_hypercharge and gadget_count >= 2 and sp_count >= 2 and gear_count >= 2:
+                             colour = "purple"   # Lv11 + HC + both gadgets + both SP + 2 gears
             else:            colour = "red"      # Lv11 but not fully upgraded
 
             # Extract buffies — API returns BrawlerBuffies: {gadget, starPower, hyperCharge} booleans
